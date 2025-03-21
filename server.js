@@ -14,8 +14,13 @@ require("dotenv").config();
 const app = express();
 app.use(
   cors({
-    origin: true,
+    origin: [
+      "http://localhost:3000",
+      "https://neha220803.github.io/ctf-frontend-react/",
+    ],
     credentials: true,
+    methods: ["GET", "POST"],
+    allowedHeaders: ["Content-Type"],
   })
 );
 
@@ -34,12 +39,13 @@ mongoose.connection.on("connected", async () => {
   // Check if there are any TeamScore records
   try {
     const count = await TeamScore.countDocuments();
-    console.log(`TeamScore collection has ${count} documents`);
+    const countUsers = await User.countDocuments();
+    if (countUsers > 0) {
+      console.log(`User collection has ${countUsers} documents`);
+    }
 
     if (count > 0) {
-      // Sample the first few records
-      const sample = await TeamScore.find().limit(3);
-      console.log("Sample TeamScore records:", JSON.stringify(sample, null, 2));
+      console.log(`TeamScore collection has ${count} documents`);
     }
   } catch (err) {
     console.error("Error checking TeamScore collection:", err);
@@ -368,28 +374,6 @@ app.get("/leaderboard", async (req, res) => {
       message: "Error fetching leaderboard",
       error: err.message,
     });
-  }
-});
-
-// Add a simple test route to verify the server is running and accessible
-app.get("/test", (req, res) => {
-  console.log("Test endpoint called");
-  res.json({ message: "Server is running", status: "success" });
-});
-
-// Add a route to test database access without authentication
-app.get("/debug/teamscores", async (req, res) => {
-  console.log("Debug teamscores endpoint called");
-  try {
-    const count = await TeamScore.countDocuments();
-    const scores = await TeamScore.find().limit(10);
-    res.json({
-      count,
-      scores,
-    });
-  } catch (err) {
-    console.error("Error in debug route:", err);
-    res.status(500).json({ error: err.message });
   }
 });
 
