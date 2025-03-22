@@ -19,10 +19,12 @@ app.use(
       "https://neha220803.github.io/ctf-frontend-react/",
     ],
     credentials: true,
-    methods: ["GET", "POST"],
-    allowedHeaders: ["Content-Type"],
+    methods: ["GET", "POST", "OPTIONS"], // Add OPTIONS method
+    allowedHeaders: ["Content-Type", "Authorization"], // Add Authorization header
   })
 );
+
+app.options("*", cors());
 
 mongoose
   .connect(process.env.MONGO_URI, {
@@ -75,6 +77,8 @@ app.use(
     }),
     cookie: {
       maxAge: 1000 * 60 * 60 * 24,
+      sameSite: "none", // Add this for cross-site cookies
+      secure: true,
     },
   })
 );
