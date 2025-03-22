@@ -33,3 +33,8 @@ const challengePoints = {
   "medium-7": 200,
   "hard-1": 400,
 };
+
+module.exports = {
+  challengeFlags,
+  challengePoints,
+};
