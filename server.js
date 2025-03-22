@@ -82,6 +82,13 @@ app.use(
     },
   })
 );
+// Add these specific preflight handlers before your routes
+app.options("/login", cors());
+app.options("/signup", cors());
+app.options("/logout", cors());
+app.options("/team-score", cors());
+app.options("/submit-flag", cors());
+app.options("/leaderboard", cors());
 app.use(passport.initialize());
 app.use(passport.session());
 
