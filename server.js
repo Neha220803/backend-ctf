@@ -83,12 +83,12 @@ app.use(
   })
 );
 // Add these specific preflight handlers before your routes
-app.options("/login", cors());
-app.options("/signup", cors());
-app.options("/logout", cors());
-app.options("/team-score", cors());
-app.options("/submit-flag", cors());
-app.options("/leaderboard", cors());
+app.options("/api/login", cors());
+app.options("/api/signup", cors());
+app.options("/api/logout", cors());
+app.options("/api/team-score", cors());
+app.options("/api/submit-flag", cors());
+app.options("/api/leaderboard", cors());
 app.use(passport.initialize());
 app.use(passport.session());
 
@@ -159,7 +159,7 @@ const isAuthenticated = (req, res, next) => {
   res.status(401).json({ message: "Not authenticated", status: "error" });
 };
 
-app.post("/signup", async (req, res) => {
+app.post("/api/signup", async (req, res) => {
   console.log("Signup attempt:", req.body.email);
   const { email, password } = req.body;
   if (!email || !password) {
@@ -191,7 +191,7 @@ app.post("/signup", async (req, res) => {
   }
 });
 
-app.post("/login", (req, res, next) => {
+app.post("/api/login", (req, res, next) => {
   console.log("Login attempt:", req.body.email);
   passport.authenticate("local", (err, user, info) => {
     if (err) {
@@ -227,7 +227,7 @@ app.post("/login", (req, res, next) => {
   })(req, res, next);
 });
 
-app.get("/logout", (req, res) => {
+app.get("/api/logout", (req, res) => {
   console.log("Logout attempt for:", req.user?.email);
   req.logout((err) => {
     if (err) {
@@ -247,7 +247,7 @@ app.get("/logout", (req, res) => {
 });
 
 // Add the team-score endpoint
-app.get("/team-score", isAuthenticated, async (req, res) => {
+app.get("/api/team-score", isAuthenticated, async (req, res) => {
   console.log(
     `Team score request for: ${req.user.email}, Team ID: ${req.user.teamid}`
   );
