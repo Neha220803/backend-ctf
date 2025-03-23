@@ -2,15 +2,15 @@ const cors = require("cors");
 const express = require("express");
 const mongoose = require("mongoose");
 const bodyParser = require("body-parser");
-const session = require("express-session");
-const passport = require("passport");
-const LocalStrategy = require("passport-local").Strategy;
+const jwt = require("jsonwebtoken");
 const User = require("./models/User");
 const TeamScore = require("./models/TeamScore");
 const cookieParser = require("cookie-parser");
-const MongoStore = require("connect-mongo");
 const { challengeFlags, challengePoints } = require("./data/challenge_info");
 require("dotenv").config();
+
+// Add this environment variable to your .env file:
+// JWT_SECRET=your_jwt_secret_key_here
 
 const app = express();
 app.use(
@@ -20,8 +20,8 @@ app.use(
       "https://neha220803.github.io/ctf-frontend-react/",
     ],
     credentials: true,
-    methods: ["GET", "POST", "OPTIONS"], // Add OPTIONS method
-    allowedHeaders: ["Content-Type", "Authorization"], // Add Authorization header
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
@@ -66,23 +66,7 @@ mongoose.connection.on("disconnected", () => {
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(cookieParser());
-app.use(
-  session({
-    secret: "your-secret-key",
-    resave: false,
-    saveUninitialized: true,
-    store: MongoStore.create({
-      mongoUrl: process.env.MONGO_URI,
-      touchAfter: 24 * 3600,
-      autoRemove: "native",
-    }),
-    cookie: {
-      maxAge: 1000 * 60 * 60 * 24,
-      sameSite: "none",
-      secure: true,
-    },
-  })
-);
+
 // Add these specific preflight handlers before your routes
 app.options("/api/login", cors());
 app.options("/api/signup", cors());
@@ -90,74 +74,41 @@ app.options("/api/logout", cors());
 app.options("/api/team-score", cors());
 app.options("/api/submit-flag", cors());
 app.options("/api/leaderboard", cors());
-app.use(passport.initialize());
-app.use(passport.session());
 
-// Add session monitoring middleware
-app.use((req, res, next) => {
-  console.log("Session ID:", req.sessionID);
-  console.log("Session data:", req.session);
-  console.log("Authenticated:", req.isAuthenticated());
-  next();
-});
+// Generate JWT token - no expiry
+const generateToken = (user) => {
+  return jwt.sign(
+    { id: user.id, email: user.email, teamid: user.teamid },
+    process.env.JWT_SECRET
+  );
+};
 
-passport.use(
-  new LocalStrategy(
-    { usernameField: "email" },
-    async (email, password, done) => {
-      console.log(`Attempting login for: ${email}`);
-      try {
-        const user = await User.findOne({ email });
-        if (!user) {
-          console.log(`User not found: ${email}`);
-          return done(null, false, { message: "User not found" });
-        }
-        if (user.password !== password) {
-          console.log(`Incorrect password for: ${email}`);
-          return done(null, false, { message: "Incorrect password" });
-        }
-        console.log(`Login successful for: ${email}, Team ID: ${user.teamid}`);
-        return done(null, user);
-      } catch (err) {
-        console.error(`Login error for ${email}:`, err);
-        return done(err);
-      }
-    }
-  )
-);
+// Authentication middleware using JWT
+const authenticateToken = (req, res, next) => {
+  console.log("Authenticating request");
 
-passport.serializeUser((user, done) => {
-  console.log(`Serializing user: ${user.email}, ID: ${user.id}`);
-  done(null, user.id);
-});
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
 
-passport.deserializeUser(async (id, done) => {
-  console.log(`Deserializing user ID: ${id}`);
-  try {
-    const user = await User.findById(id);
-    if (!user) {
-      console.log(`User not found for ID: ${id}`);
-      return done(null, false);
-    }
-    console.log(`Found user: ${user.email}, Team ID: ${user.teamid}`);
-    done(null, user);
-  } catch (err) {
-    console.error(`Deserialize error for ID ${id}:`, err);
-    done(err);
+  if (!token) {
+    console.log("No token provided");
+    return res
+      .status(401)
+      .json({ message: "Not authenticated", status: "error" });
   }
-});
 
-// Authentication check middleware
-const isAuthenticated = (req, res, next) => {
-  console.log(`Authentication check - authenticated: ${req.isAuthenticated()}`);
-  if (req.isAuthenticated()) {
-    console.log(
-      `User authenticated: ${req.user.email}, Team ID: ${req.user.teamid}`
-    );
-    return next();
-  }
-  console.log("Authentication failed - no valid session");
-  res.status(401).json({ message: "Not authenticated", status: "error" });
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) {
+      console.log("Token verification failed:", err.message);
+      return res
+        .status(403)
+        .json({ message: "Token invalid", status: "error" });
+    }
+
+    console.log(`User authenticated: ${user.email}, Team ID: ${user.teamid}`);
+    req.user = user;
+    next();
+  });
 };
 
 app.post("/api/signup", async (req, res) => {
@@ -192,63 +143,55 @@ app.post("/api/signup", async (req, res) => {
   }
 });
 
-app.post("/api/login", (req, res, next) => {
+app.post("/api/login", async (req, res) => {
   console.log("Login attempt:", req.body.email);
-  passport.authenticate("local", (err, user, info) => {
-    if (err) {
-      console.error("Login error:", err);
-      return res.status(500).json({
-        message: "Error during login",
-        status: "error",
-        error: err.message,
-      });
-    }
+  const { email, password } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+
     if (!user) {
-      console.log("Login failed:", info?.message || "Unknown reason");
+      console.log(`User not found: ${email}`);
       return res
         .status(401)
-        .json({ message: info?.message || "Login failed", status: "error" });
+        .json({ message: "User not found", status: "error" });
     }
-    req.login(user, (loginErr) => {
-      if (loginErr) {
-        console.error("Session login error:", loginErr);
-        return res.status(500).json({
-          message: "Error logging in",
-          status: "error",
-          error: loginErr.message,
-        });
-      }
-      console.log(`Login successful: ${user.email}, Team ID: ${user.teamid}`);
-      res.json({
-        message: "Login successful",
-        status: "success",
-        teamid: user.teamid,
-      });
+
+    if (user.password !== password) {
+      console.log(`Incorrect password for: ${email}`);
+      return res
+        .status(401)
+        .json({ message: "Incorrect password", status: "error" });
+    }
+
+    // Generate token without expiry
+    const token = generateToken(user);
+
+    console.log(`Login successful: ${user.email}, Team ID: ${user.teamid}`);
+    res.json({
+      message: "Login successful",
+      status: "success",
+      teamid: user.teamid,
+      token: token,
     });
-  })(req, res, next);
+  } catch (err) {
+    console.error(`Login error for ${email}:`, err);
+    res.status(500).json({
+      message: "Error during login",
+      status: "error",
+      error: err.message,
+    });
+  }
 });
 
-app.get("/api/logout", (req, res) => {
-  console.log("Logout attempt for:", req.user?.email);
-  req.logout((err) => {
-    if (err) {
-      console.error("Logout error:", err);
-      return res
-        .status(500)
-        .json({ message: "Error logging out", error: err.message });
-    }
-    req.session.destroy((destroyErr) => {
-      if (destroyErr) {
-        console.error("Session destroy error:", destroyErr);
-      }
-      console.log("Logout successful, session destroyed");
-      res.json({ message: "Logout successful", status: "success" });
-    });
-  });
+// Simple logout endpoint - client-side will handle token removal
+app.post("/api/logout", (req, res) => {
+  console.log("Logout request received");
+  res.status(200).json({ message: "Logout successful", status: "success" });
 });
 
 // Add the team-score endpoint
-app.get("/api/team-score", isAuthenticated, async (req, res) => {
+app.get("/api/team-score", authenticateToken, async (req, res) => {
   console.log(
     `Team score request for: ${req.user.email}, Team ID: ${req.user.teamid}`
   );
@@ -271,7 +214,7 @@ app.get("/api/team-score", isAuthenticated, async (req, res) => {
   }
 });
 
-app.post("/submit-flag", isAuthenticated, async (req, res) => {
+app.post("/api/submit-flag", authenticateToken, async (req, res) => {
   console.log(
     `Flag submission from: ${req.user.email}, Team ID: ${req.user.teamid}`
   );
@@ -321,14 +264,8 @@ app.post("/submit-flag", isAuthenticated, async (req, res) => {
   }
 });
 
-app.get("/leaderboard", async (req, res) => {
+app.get("/api/leaderboard", async (req, res) => {
   console.log("Leaderboard endpoint called");
-  console.log("Authentication status:", req.isAuthenticated());
-  if (req.isAuthenticated()) {
-    console.log("User:", req.user.email, "Team ID:", req.user.teamid);
-  } else {
-    console.log("User is not authenticated");
-  }
 
   try {
     const leaderboard = await TeamScore.find().sort({

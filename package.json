@@ -20,6 +20,7 @@
     "ejs": "^3.1.10",
     "express": "^4.21.2",
     "express-session": "^1.18.1",
+    "jsonwebtoken": "^9.0.2",
     "login-app": "file:",
     "mongoose": "^8.12.1",
     "passport": "^0.7.0",
