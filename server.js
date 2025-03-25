@@ -74,6 +74,7 @@ app.options("/api/logout", cors());
 app.options("/api/team-score", cors());
 app.options("/api/submit-flag", cors());
 app.options("/api/leaderboard", cors());
+app.options("/api/officer/users", cors());
 
 // Generate JWT token - no expiry
 const generateToken = (user) => {
@@ -112,14 +113,17 @@ const authenticateToken = (req, res, next) => {
 };
 
 app.post("/api/signup", async (req, res) => {
-  console.log("Signup attempt:", req.body.email);
-  const { email, password } = req.body;
-  if (!email || !password) {
+  console.log("Signup attempt for:", req.body.email);
+  const { email, password, mobile1, mobile2, aadhar1, aadhar2 } = req.body;
+
+  // Validate all required fields
+  if (!email || !password || !mobile1 || !mobile2 || !aadhar1 || !aadhar2) {
     console.log("Signup missing fields");
     return res
       .status(400)
       .json({ message: "Missing required fields", status: "error" });
   }
+
   try {
     let user = await User.findOne({ email });
     if (user) {
@@ -128,8 +132,20 @@ app.post("/api/signup", async (req, res) => {
         .status(400)
         .json({ message: "User already exists", status: "error" });
     }
+
     const teamid = `team-${Math.random().toString(36).slice(2, 11)}`;
-    user = new User({ email, password, teamid });
+
+    // Create new user with all fields
+    user = new User({
+      email,
+      password,
+      teamid,
+      mobile1,
+      mobile2,
+      aadhar1,
+      aadhar2,
+    });
+
     await user.save();
     console.log(`User created: ${email}, Team ID: ${teamid}`);
     res.json({ message: "Signup successful", status: "success" });
@@ -285,6 +301,38 @@ app.get("/api/leaderboard", async (req, res) => {
     console.error("Error fetching leaderboard:", err);
     res.status(500).json({
       message: "Error fetching leaderboard",
+      error: err.message,
+    });
+  }
+});
+
+app.get("/api/officer/users", authenticateToken, async (req, res) => {
+  console.log(`Officer ${req.user.email} requesting all user details`);
+  try {
+    let users = await User.find({}).select("-password");
+    const authenticatedUserEmail = req.user.email;
+    const authUserIndex = users.findIndex(
+      (user) => user.email === authenticatedUserEmail
+    );
+    if (authUserIndex !== -1) {
+      const authUser = users.splice(authUserIndex, 1)[0];
+      users.unshift(authUser);
+      console.log(
+        `Moved authenticated user (${authenticatedUserEmail}) to the top of results`
+      );
+    }
+    console.log(`Retrieved ${users.length} user records`);
+    res.json({
+      status: "success",
+      count: users.length,
+      authenticatedUser: authenticatedUserEmail,
+      data: users,
+    });
+  } catch (err) {
+    console.error("Error fetching user details:", err);
+    res.status(500).json({
+      message: "Error fetching user details",
+      status: "error",
       error: err.message,
     });
   }
